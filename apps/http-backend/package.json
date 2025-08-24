@@ -16,7 +16,8 @@
     "@repo/typescript-config": "*",
     "@types/express": "^5.0.3",
     "@repo/backend-common": "*",
-    "@repo/common": "*"
+    "@repo/common": "*",
+    "@repo/db": "*"
   },
   "keywords": [],
   "author": "",
