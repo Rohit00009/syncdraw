@@ -8,16 +8,18 @@
     "dev": "tsc -b && node ./dist/index.js"
   },
   "dependencies": {
+    "@repo/db": "*",
+    "@types/bcrypt": "^6.0.0",
     "@types/jsonwebtoken": "^9.0.10",
+    "bcrypt": "^6.0.0",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
-    "@repo/typescript-config": "*",
-    "@types/express": "^5.0.3",
     "@repo/backend-common": "*",
     "@repo/common": "*",
-    "@repo/db": "*"
+    "@repo/typescript-config": "*",
+    "@types/express": "^5.0.3"
   },
   "keywords": [],
   "author": "",
