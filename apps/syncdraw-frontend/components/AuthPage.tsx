@@ -1,4 +1,7 @@
 "use client";
+
+import Link from "next/link";
+
 export function AuthPage({ isSignIn }: { isSignIn: boolean }) {
   return (
     <div className="w-screen h-screen flex justify-center items-center bg-gradient-to-br from-gray-900 via-black to-gray-900">
@@ -58,9 +61,12 @@ export function AuthPage({ isSignIn }: { isSignIn: boolean }) {
         {/* Small Switch Link */}
         <p className="text-center text-sm text-white/60 mt-6">
           {isSignIn ? "Don't have an account? " : "Already have an account? "}
-          <span className="text-green-400 hover:underline cursor-pointer">
+          <Link
+            href={isSignIn ? "/signup" : "/signin"}
+            className="text-green-400 hover:underline"
+          >
             {isSignIn ? "Sign Up" : "Sign In"}
-          </span>
+          </Link>
         </p>
       </div>
     </div>
