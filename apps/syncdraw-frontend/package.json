@@ -9,11 +9,12 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@repo/ui": "*",
+    "axios": "^1.11.0",
     "lucide-react": "^0.541.0",
     "next": "15.5.0",
     "react": "19.1.0",
-    "react-dom": "19.1.0",
-    "@repo/ui": "*"
+    "react-dom": "19.1.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
