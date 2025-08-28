@@ -63,7 +63,10 @@ function App() {
 
         <div className="mt-10 flex flex-col sm:flex-row items-center gap-4">
           <Link href="/signin">
-            <Button size="lg" className="h-12 px-6 glow-hover w-full sm:w-auto">
+            <Button
+              size="lg"
+              className="rounded-2xl h-12 px-6 glow-hover bg-gradient-to-r from-green-400 to-green-600 text-white w-full sm:w-auto"
+            >
               Sign in
             </Button>
           </Link>
@@ -71,7 +74,7 @@ function App() {
             <Button
               variant="outline"
               size="lg"
-              className="h-12 px-6 glow-hover w-full sm:w-auto"
+              className="rounded-2xl h-12 px-6 glow-hover w-full sm:w-auto"
             >
               Sign up
             </Button>
