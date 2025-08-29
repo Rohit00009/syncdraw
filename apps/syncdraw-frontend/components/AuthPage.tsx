@@ -23,6 +23,20 @@ export function AuthPage({ isSignIn }: { isSignIn: boolean }) {
           {isSignIn ? "Login to your Account" : "Create an Account"}
         </div>
 
+        {/* Name Input (only for Sign Up) */}
+        {!isSignIn && (
+          <div className="mb-4">
+            <input
+              type="text"
+              placeholder="Full Name"
+              className="w-full border border-white/30 bg-white/10 
+             placeholder-white/60 text-white px-4 py-3 rounded-xl 
+              focus:outline-none focus:ring-2 focus:ring-green-400 
+              transition"
+            />
+          </div>
+        )}
+
         {/* Email Input */}
         <div className="mb-4">
           <input
