@@ -9,6 +9,7 @@ import {
 } from "@repo/common/types";
 import { prismaClient } from "@repo/db/client";
 import cors from "cors";
+import bcrypt from "bcrypt";
 
 const app = express();
 app.use(express.json());
@@ -24,11 +25,11 @@ app.post("/signup", async (req, res) => {
     return;
   }
   try {
+    const hashedPw = await bcrypt.hash(parsedData.data.password, 10);
     const user = await prismaClient.user.create({
       data: {
         email: parsedData.data?.username,
-        // TODO: Hash the pw
-        password: parsedData.data.password,
+        password: hashedPw,
         name: parsedData.data.name,
       },
     });
@@ -51,13 +52,15 @@ app.post("/signin", async (req, res) => {
     return;
   }
 
-  // TODO: Compare the hashed pws here
   const user = await prismaClient.user.findFirst({
-    where: {
-      email: parsedData.data.username,
-      password: parsedData.data.password,
-    },
+    where: { email: parsedData.data.username },
   });
+  if (
+    !user ||
+    !(await bcrypt.compare(parsedData.data.password, user.password))
+  ) {
+    return res.status(403).json({ message: "Not authorized" });
+  }
 
   if (!user) {
     res.status(403).json({
@@ -94,6 +97,9 @@ app.post("/room", middleware, async (req, res) => {
       data: {
         slug: parsedData.data.name,
         adminId: userId,
+        members: {
+          connect: { id: userId }, // add admin to members
+        },
       },
     });
 

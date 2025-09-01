@@ -2,8 +2,21 @@ import { HTTP_BACKEND } from "@/config";
 import axios from "axios";
 
 type Shape =
-  | { type: "rect"; x: number; y: number; width: number; height: number }
-  | { type: "circle"; centerX: number; centerY: number; radius: number };
+  | {
+      id: string;
+      type: "rect";
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }
+  | {
+      id: string;
+      type: "circle";
+      centerX: number;
+      centerY: number;
+      radius: number;
+    };
 
 export async function initDraw(
   canvas: HTMLCanvasElement,
@@ -15,110 +28,95 @@ export async function initDraw(
 
   let existingShapes: Shape[] = await getExistingShapes(roomId);
 
-  // Listen to incoming shapes from socket
+  let clicked = false;
+  let startX = 0;
+  let startY = 0;
+  let selectedShape: Shape | null = null;
+  let offsetX = 0;
+  let offsetY = 0;
+
   socket.onmessage = (event) => {
     const message = JSON.parse(event.data);
     if (message.type === "chat") {
       const parsedShape = JSON.parse(message.message);
       existingShapes.push(parsedShape.shape);
       clearCanvas(existingShapes, canvas, ctx);
+    } else if (message.type === "move_shape") {
+      const updatedShape = message.shape as Shape;
+      const index = existingShapes.findIndex((s) => s.id === updatedShape.id);
+      if (index !== -1) {
+        existingShapes[index] = updatedShape;
+        clearCanvas(existingShapes, canvas, ctx);
+      }
     }
   };
 
-  clearCanvas(existingShapes, canvas, ctx);
-
-  let clicked = false;
-  let startX = 0;
-  let startY = 0;
-
   canvas.addEventListener("mousedown", (e) => {
     clicked = true;
-    startX = e.clientX;
-    startY = e.clientY;
-  });
+    startX = e.offsetX;
+    startY = e.offsetY;
 
-  canvas.addEventListener("mouseup", (e) => {
-    clicked = false;
-    const width = e.clientX - startX;
-    const height = e.clientY - startY;
+    const selectedTool = (window as any).selectedTool;
 
-    // @ts-ignore
-    const selectedTool = window.selectedTool;
-    let shape: Shape | null = null;
-
-    if (selectedTool === "rect") {
-      shape = {
-        type: "rect",
-        x: startX,
-        y: startY,
-        width,
-        height,
-      };
-    } else if (selectedTool === "circle") {
-      const radius = Math.max(Math.abs(width), Math.abs(height)) / 2;
-      shape = {
-        type: "circle",
-        centerX: startX + radius,
-        centerY: startY + radius,
-        radius,
-      };
+    if (selectedTool === "pointer") {
+      for (let i = existingShapes.length - 1; i >= 0; i--) {
+        const shape = existingShapes[i];
+        if (isInsideShape(shape, startX, startY)) {
+          selectedShape = shape;
+          offsetX = startX - ("x" in shape ? shape.x : shape.centerX);
+          offsetY = startY - ("y" in shape ? shape.y : shape.centerY);
+          break;
+        }
+      }
     }
-
-    if (!shape) return;
-
-    existingShapes.push(shape);
-
-    socket.send(
-      JSON.stringify({
-        type: "chat",
-        message: JSON.stringify({ shape }),
-        roomId,
-      })
-    );
-
-    clearCanvas(existingShapes, canvas, ctx);
   });
 
   canvas.addEventListener("mousemove", (e) => {
     if (!clicked) return;
+    const currentX = e.offsetX;
+    const currentY = e.offsetY;
+    const selectedTool = (window as any).selectedTool;
 
-    const width = e.clientX - startX;
-    const height = e.clientY - startY;
+    if (selectedTool === "pointer" && selectedShape) {
+      if (selectedShape.type === "rect") {
+        selectedShape.x = currentX - offsetX;
+        selectedShape.y = currentY - offsetY;
+      } else if (selectedShape.type === "circle") {
+        selectedShape.centerX = currentX - offsetX;
+        selectedShape.centerY = currentY - offsetY;
+      }
 
-    clearCanvas(existingShapes, canvas, ctx);
-    ctx.strokeStyle = "rgba(255, 255, 255)";
+      clearCanvas(existingShapes, canvas, ctx);
 
-    // @ts-ignore
-    const selectedTool = window.selectedTool;
-
-    if (selectedTool === "rect") {
-      ctx.strokeRect(startX, startY, width, height);
-    } else if (selectedTool === "circle") {
-      const radius = Math.max(Math.abs(width), Math.abs(height)) / 2;
-      const centerX = startX + radius;
-      const centerY = startY + radius;
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.closePath();
+      socket.send(
+        JSON.stringify({ type: "move_shape", shape: selectedShape, roomId })
+      );
+      return;
     }
   });
+
+  canvas.addEventListener("mouseup", (e) => {
+    clicked = false;
+    selectedShape = null;
+  });
+
+  clearCanvas(existingShapes, canvas, ctx);
 }
 
 function clearCanvas(
-  existingShapes: Shape[],
+  shapes: Shape[],
   canvas: HTMLCanvasElement,
   ctx: CanvasRenderingContext2D
 ) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "rgba(0, 0, 0)";
+  ctx.fillStyle = "black";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  existingShapes.forEach((shape) => {
-    ctx.strokeStyle = "rgba(255, 255, 255)";
-    if (shape.type === "rect") {
+  shapes.forEach((shape) => {
+    ctx.strokeStyle = "white";
+    if (shape.type === "rect")
       ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
-    } else if (shape.type === "circle") {
+    else if (shape.type === "circle") {
       ctx.beginPath();
       ctx.arc(shape.centerX, shape.centerY, shape.radius, 0, Math.PI * 2);
       ctx.stroke();
@@ -129,10 +127,20 @@ function clearCanvas(
 
 async function getExistingShapes(roomId: string): Promise<Shape[]> {
   const res = await axios.get(`${HTTP_BACKEND}/chats/${roomId}`);
-  const messages = res.data.messages;
+  return res.data.messages.map(
+    (x: { message: string }) => JSON.parse(x.message).shape
+  );
+}
 
-  return messages.map((x: { message: string }) => {
-    const messageData = JSON.parse(x.message);
-    return messageData.shape;
-  });
+function isInsideShape(shape: Shape, x: number, y: number): boolean {
+  if (shape.type === "rect")
+    return (
+      x >= shape.x &&
+      x <= shape.x + shape.width &&
+      y >= shape.y &&
+      y <= shape.y + shape.height
+    );
+  if (shape.type === "circle")
+    return Math.hypot(x - shape.centerX, y - shape.centerY) <= shape.radius;
+  return false;
 }
