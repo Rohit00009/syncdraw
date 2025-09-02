@@ -1,5 +1,7 @@
+// apps/syncdraw-frontend/lib/http.ts
 import axios from "axios";
+import { HTTP_BACKEND } from "@/config";
 
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_HTTP_BACKEND || "http://localhost:3001",
+  baseURL: HTTP_BACKEND,
 });

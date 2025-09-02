@@ -6,9 +6,11 @@
     "./client": "./src/index.ts"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "prisma:generate": "prisma generate --schema=./prisma/schema.prisma",
+    "prisma:migrate": "prisma migrate dev --schema=./prisma/schema.prisma"
   },
   "devDependencies": {
+    "prisma": "^6.14.0",
     "@repo/typescript-config": "*"
   },
   "keywords": [],

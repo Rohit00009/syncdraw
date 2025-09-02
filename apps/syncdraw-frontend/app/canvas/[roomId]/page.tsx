@@ -1,13 +1,15 @@
 import { RoomCanvas } from "@/components/RoomCanvas";
 
-interface Props {
-  params: { roomId: string }; // props from App Router
+interface CanvasPageProps {
+  params: Promise<{ roomId: string }>;
 }
 
-export default async function CanvasPage({ params }: Props) {
-  const roomId = params.roomId;
+export default async function CanvasPage({ params }: CanvasPageProps) {
+  const { roomId } = await params;
 
-  console.log("Server Room ID from URL param:", roomId);
-
-  return <RoomCanvas roomId={roomId} />;
+  return (
+    <div className="w-full h-full">
+      <RoomCanvas roomId={roomId} />
+    </div>
+  );
 }
