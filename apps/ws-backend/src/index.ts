@@ -7,9 +7,10 @@ const wss = new WebSocketServer({ port: 8080 });
 
 interface User {
   ws: WebSocket;
-  rooms: number[]; // changed to number[]
+  rooms: number[];
   userId: string;
 }
+
 const users: User[] = [];
 
 function checkUser(token: string): string | null {
@@ -51,14 +52,15 @@ wss.on("connection", (ws, request) => {
       return;
     }
 
+    // --- JOIN / LEAVE ROOM ---
     if (parsedData.type === "join_room" || parsedData.type === "leave_room") {
-      const slug = parsedData.roomId; // actually the slug
+      const slug = parsedData.roomId;
       if (!slug) return console.error("Invalid roomId:", slug);
 
       const room = await prismaClient.room.findFirst({ where: { slug } });
       if (!room) return console.error("Room not found for slug:", slug);
 
-      const roomId = room.id; // numeric ID for Prisma
+      const roomId = room.id;
 
       if (parsedData.type === "join_room") {
         if (!user.rooms.includes(roomId)) user.rooms.push(roomId);
@@ -85,47 +87,157 @@ wss.on("connection", (ws, request) => {
           console.error("Failed to leave room:", e);
         }
       }
+
+      return;
     }
 
+    // --- CHAT MESSAGES ---
     if (parsedData.type === "chat") {
       const roomId = Number(parsedData.roomId);
       const { message } = parsedData;
 
       try {
         await prismaClient.chat.create({
-          data: {
-            roomId,
-            message,
-            userId,
-          },
+          data: { roomId, message, userId },
         });
       } catch (e) {
         console.error("Failed to save chat:", e);
       }
 
-      // Broadcast chat to all users in the room
       users.forEach((u) => {
         if (u.rooms.includes(roomId) && u.ws.readyState === WebSocket.OPEN) {
           u.ws.send(JSON.stringify({ type: "chat", roomId, message, userId }));
         }
       });
+
+      return;
     }
 
+    // --- DRAW NEW SHAPE ---
     if (parsedData.type === "draw") {
-      // get room numeric ID
+      // Get room by slug
       const room = await prismaClient.room.findFirst({
         where: { slug: parsedData.roomId },
       });
-      if (!room) return;
-      const roomId = room.id;
-      const { shape } = parsedData;
+      if (!room)
+        return console.error("Room not found for slug:", parsedData.roomId);
 
-      // broadcast to all users in the same room
+      const roomId = room.id; // numeric DB id
+      const shape = parsedData.shape;
+
+      try {
+        await prismaClient.chat.create({
+          data: {
+            roomId,
+            message: JSON.stringify({ shape }),
+            userId,
+          },
+        });
+        console.log("Shape saved to DB:", shape.id);
+      } catch (e) {
+        console.error("Failed to save draw message:", e);
+      }
+
+      // Broadcast to all users in the room
       users.forEach((u) => {
         if (u.rooms.includes(roomId) && u.ws.readyState === WebSocket.OPEN) {
           u.ws.send(JSON.stringify({ type: "draw", roomId, shape, userId }));
         }
       });
+
+      return;
+    }
+
+    // --- MOVE SHAPE ---
+    if (parsedData.type === "move_shape") {
+      const room = await prismaClient.room.findFirst({
+        where: { slug: parsedData.roomId },
+      });
+      if (!room)
+        return console.error("Room not found for slug:", parsedData.roomId);
+      const roomId = room.id;
+      const updatedShape = parsedData.shape;
+
+      try {
+        const chats = await prismaClient.chat.findMany({ where: { roomId } });
+        let foundChat: any = null;
+
+        for (const c of chats) {
+          try {
+            const parsed = JSON.parse(c.message);
+            if (parsed?.shape?.id === updatedShape.id) {
+              foundChat = c;
+              break;
+            }
+          } catch {}
+        }
+
+        if (foundChat) {
+          await prismaClient.chat.update({
+            where: { id: foundChat.id },
+            data: { message: JSON.stringify({ shape: updatedShape }) },
+          });
+        } else {
+          await prismaClient.chat.create({
+            data: {
+              roomId,
+              message: JSON.stringify({ shape: updatedShape }),
+              userId,
+            },
+          });
+        }
+      } catch (e) {
+        console.error("Failed to persist move_shape:", e);
+      }
+
+      users.forEach((u) => {
+        if (u.rooms.includes(roomId) && u.ws.readyState === WebSocket.OPEN) {
+          u.ws.send(
+            JSON.stringify({
+              type: "move_shape",
+              roomId,
+              shape: updatedShape,
+              userId,
+            })
+          );
+        }
+      });
+
+      return;
+    }
+
+    // --- DRAW NEW SHAPE ---
+    if (parsedData.type === "draw") {
+      // Get room by slug
+      const room = await prismaClient.room.findFirst({
+        where: { slug: parsedData.roomId },
+      });
+      if (!room)
+        return console.error("Room not found for slug:", parsedData.roomId);
+
+      const roomId = room.id; // Use the DB numeric id, not slug
+      const shape = parsedData.shape;
+
+      try {
+        await prismaClient.chat.create({
+          data: {
+            roomId, // must be DB numeric id
+            message: JSON.stringify({ shape }), // shape stored as JSON string
+            userId,
+          },
+        });
+      } catch (e) {
+        console.error("Failed to save draw message:", e);
+      }
+
+      // Broadcast to all users in room
+      users.forEach((u) => {
+        if (u.rooms.includes(roomId) && u.ws.readyState === WebSocket.OPEN) {
+          u.ws.send(JSON.stringify({ type: "draw", roomId, shape, userId }));
+        }
+      });
+
+      return;
     }
   });
 

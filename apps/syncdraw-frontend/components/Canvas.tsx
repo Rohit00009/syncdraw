@@ -44,6 +44,28 @@ export function Canvas({
     game?.setTool(activeTool);
   }, [activeTool, game]);
 
+  // call one-off actions when activeTool becomes special action
+  useEffect(() => {
+    if (!game) return;
+
+    if (activeTool === "undo") {
+      game.undo();
+      setActiveTool("pointer"); // reset to pointer (or pencil if you prefer)
+    } else if (activeTool === "redo") {
+      game.redo();
+      setActiveTool("pointer");
+    } else if (activeTool === "zoom-in") {
+      game.zoomIn();
+      setActiveTool("pointer");
+    } else if (activeTool === "zoom-out") {
+      game.zoomOut();
+      setActiveTool("pointer");
+    } else {
+      // for normal tools, set tool on the Game
+      game.setTool(activeTool);
+    }
+  }, [activeTool, game]);
+
   useEffect(() => {
     if (canvasRef.current) {
       const g = new Game(canvasRef.current, roomId, socket);
