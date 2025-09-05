@@ -24,6 +24,7 @@ export type Tool =
   | "line"
   | "text"
   | "eraser"
+  | "grab"
   | "undo"
   | "redo"
   | "zoom-in"
@@ -106,6 +107,12 @@ function Topbar({
         border border-white/20 shadow-xl z-50
       "
     >
+      <IconButton
+        onClick={() => setActiveTool("grab")}
+        active={activeTool === "grab"}
+        icon={<Pointer />}
+      />
+
       <IconButton
         onClick={() => setActiveTool("pointer")}
         active={activeTool === "pointer"}

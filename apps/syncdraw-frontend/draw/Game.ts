@@ -39,6 +39,9 @@ export class Game {
   private undoStack: Shape[][] = [];
   private redoStack: Shape[][] = [];
   private scale = 1;
+  private isPanning = false;
+  private panStartX = 0;
+  private panStartY = 0;
 
   socket: WebSocket;
 
@@ -61,6 +64,19 @@ export class Game {
 
   setTool(tool: Tool) {
     this.selectedTool = tool;
+
+    // update cursor based on tool
+    if (tool === "grab") {
+      this.canvas.style.cursor = "grab";
+    } else if (tool === "pointer") {
+      this.canvas.style.cursor = "default";
+    } else if (tool === "pencil") {
+      this.canvas.style.cursor = "crosshair";
+    } else if (tool === "eraser") {
+      this.canvas.style.cursor = "not-allowed";
+    } else {
+      this.canvas.style.cursor = "crosshair"; // fallback for drawing tools
+    }
   }
 
   async init() {
@@ -98,19 +114,59 @@ export class Game {
   }
 
   clearCanvas() {
-    this.ctx.save();
-    this.ctx.scale(this.scale, this.scale);
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this.ctx.fillStyle = "black";
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    const { ctx, canvas } = this;
+
+    ctx.save();
+
+    // Reset transform
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+    // Fill black background
+    ctx.fillStyle = "black";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Apply camera (pan + zoom)
+    ctx.setTransform(this.scale, 0, 0, this.scale, this.offsetX, this.offsetY);
+
+    // --- Infinite grid background (dim lines on black) ---
+    const gridSize = 40;
+    const startX = -this.offsetX / this.scale - canvas.width / (2 * this.scale);
+    const startY =
+      -this.offsetY / this.scale - canvas.height / (2 * this.scale);
+    const endX = startX + canvas.width / this.scale + 2000;
+    const endY = startY + canvas.height / this.scale + 2000;
+
+    ctx.beginPath();
+    for (
+      let x = Math.floor(startX / gridSize) * gridSize;
+      x < endX;
+      x += gridSize
+    ) {
+      ctx.moveTo(x, startY);
+      ctx.lineTo(x, endY);
+    }
+    for (
+      let y = Math.floor(startY / gridSize) * gridSize;
+      y < endY;
+      y += gridSize
+    ) {
+      ctx.moveTo(startX, y);
+      ctx.lineTo(endX, y);
+    }
+    ctx.strokeStyle = "rgba(255,255,255,0.1)"; // faint white grid
+    ctx.lineWidth = 1 / this.scale;
+    ctx.stroke();
+
+    // --- Draw shapes (in world space) ---
     this.existingShapes.forEach((shape) => this.drawShape(shape));
-    this.ctx.restore();
+
+    ctx.restore();
   }
 
   private drawShape(shape: Shape) {
     this.ctx.strokeStyle = "white";
     this.ctx.fillStyle = "white";
-    this.ctx.lineWidth = 2;
+    this.ctx.lineWidth = 2 / this.scale;
 
     switch (shape.type) {
       case "rect":
@@ -126,7 +182,6 @@ export class Game {
           Math.PI * 2
         );
         this.ctx.stroke();
-        this.ctx.closePath();
         break;
       case "line":
         this.ctx.beginPath();
@@ -135,7 +190,7 @@ export class Game {
         this.ctx.stroke();
         break;
       case "text":
-        this.ctx.font = "16px Arial";
+        this.ctx.font = `${16 / this.scale}px Arial`;
         this.ctx.fillText(shape.text, shape.x, shape.y);
         break;
       case "pencil":
@@ -147,6 +202,13 @@ export class Game {
         this.ctx.stroke();
         break;
     }
+  }
+
+  private screenToWorld(x: number, y: number) {
+    return {
+      x: (x - this.offsetX) / this.scale,
+      y: (y - this.offsetY) / this.scale,
+    };
   }
 
   private isInsideShape(shape: Shape, x: number, y: number) {
@@ -192,28 +254,38 @@ export class Game {
 
   mouseDownHandler = (e: MouseEvent) => {
     this.clicked = true;
-    this.startX = e.offsetX;
-    this.startY = e.offsetY;
+
+    const { x, y } = this.screenToWorld(e.offsetX, e.offsetY);
+    this.startX = x;
+    this.startY = y;
+
+    if (this.selectedTool === "grab") {
+      this.isPanning = true;
+      this.panStartX = e.clientX;
+      this.panStartY = e.clientY;
+      this.canvas.style.cursor = "grabbing";
+      return;
+    }
 
     if (this.selectedTool === "pencil") {
-      this.currentPencilPoints = [{ x: this.startX, y: this.startY }];
+      this.currentPencilPoints = [{ x, y }];
       this.ctx.beginPath();
-      this.ctx.moveTo(this.startX, this.startY);
+      this.ctx.moveTo(x, y);
     } else if (this.selectedTool === "pointer") {
       for (let i = this.existingShapes.length - 1; i >= 0; i--) {
         const shape = this.existingShapes[i];
-        if (this.isInsideShape(shape, this.startX, this.startY)) {
+        if (this.isInsideShape(shape, x, y)) {
           this.selectedShape = shape;
 
           if (shape.type === "rect" || shape.type === "text") {
-            this.offsetX = this.startX - shape.x;
-            this.offsetY = this.startY - shape.y;
+            this.offsetX = x - shape.x;
+            this.offsetY = y - shape.y;
           } else if (shape.type === "circle") {
-            this.offsetX = this.startX - shape.centerX;
-            this.offsetY = this.startY - shape.centerY;
+            this.offsetX = x - shape.centerX;
+            this.offsetY = y - shape.centerY;
           } else if (shape.type === "line" || shape.type === "pencil") {
-            this.prevX = this.startX;
-            this.prevY = this.startY;
+            this.prevX = x;
+            this.prevY = y;
           }
           break;
         }
@@ -223,8 +295,11 @@ export class Game {
 
   mouseUpHandler = (e: MouseEvent) => {
     this.clicked = false;
-    const currentX = e.offsetX;
-    const currentY = e.offsetY;
+
+    const { x: currentX, y: currentY } = this.screenToWorld(
+      e.offsetX,
+      e.offsetY
+    );
 
     if (this.selectedTool === "pointer") {
       this.selectedShape = null;
@@ -236,7 +311,13 @@ export class Game {
     const width = currentX - this.startX;
     const height = currentY - this.startY;
 
-    if (this.selectedTool === "rect")
+    if (this.selectedTool === "grab" && this.isPanning) {
+      this.isPanning = false;
+      this.canvas.style.cursor = "grab";
+      return;
+    }
+
+    if (this.selectedTool === "rect") {
       shape = {
         id,
         type: "rect",
@@ -245,7 +326,7 @@ export class Game {
         width,
         height,
       };
-    else if (this.selectedTool === "circle") {
+    } else if (this.selectedTool === "circle") {
       const radius = Math.sqrt(width ** 2 + height ** 2);
       shape = {
         id,
@@ -254,7 +335,7 @@ export class Game {
         centerY: this.startY,
         radius,
       };
-    } else if (this.selectedTool === "line")
+    } else if (this.selectedTool === "line") {
       shape = {
         id,
         type: "line",
@@ -263,9 +344,10 @@ export class Game {
         x2: currentX,
         y2: currentY,
       };
-    else if (this.selectedTool === "pencil") {
+    } else if (this.selectedTool === "pencil") {
       shape = { id, type: "pencil", points: this.currentPencilPoints };
     } else if (this.selectedTool === "eraser") {
+      // same logic but use world coords
       for (let i = this.existingShapes.length - 1; i >= 0; i--) {
         if (
           this.isInsideShape(this.existingShapes[i], this.startX, this.startY)
@@ -291,75 +373,48 @@ export class Game {
       shape = { id, type: "text", x: this.startX, y: this.startY, text };
     }
 
-    if (!shape) {
-      return;
-    }
-    if (shape) {
-      this.undoStack.push([...this.existingShapes]);
-      this.redoStack = [];
-      this.existingShapes.push(shape);
-      this.clearCanvas();
-      this.socket.send(
-        JSON.stringify({
-          type: "chat",
-          message: JSON.stringify({ shape }),
-          roomId: this.roomId,
-        })
-      );
-    }
+    if (!shape) return;
+
+    this.undoStack.push([...this.existingShapes]);
+    this.redoStack = [];
+    this.existingShapes.push(shape);
+    this.clearCanvas();
+
+    this.socket.send(
+      JSON.stringify({
+        type: "chat",
+        message: JSON.stringify({ shape }),
+        roomId: this.roomId,
+      })
+    );
   };
 
   mouseMoveHandler = (e: MouseEvent) => {
     if (!this.clicked) return;
 
-    const currentX = e.offsetX;
-    const currentY = e.offsetY;
+    const { x: currentX, y: currentY } = this.screenToWorld(
+      e.offsetX,
+      e.offsetY
+    );
+
+    // redraw everything
     this.clearCanvas();
+
     this.ctx.strokeStyle = "white";
-    this.ctx.lineWidth = 2;
+    this.ctx.lineWidth = 2 / this.scale;
 
-    if (this.selectedTool === "pointer" && this.selectedShape) {
-      if (
-        this.selectedShape.type === "rect" ||
-        this.selectedShape.type === "text"
-      ) {
-        this.selectedShape.x = currentX - this.offsetX;
-        this.selectedShape.y = currentY - this.offsetY;
-      } else if (this.selectedShape.type === "circle") {
-        this.selectedShape.centerX = currentX - this.offsetX;
-        this.selectedShape.centerY = currentY - this.offsetY;
-      } else if (this.selectedShape.type === "line") {
-        const dx = currentX - this.prevX;
-        const dy = currentY - this.prevY;
-        this.selectedShape.x1 += dx;
-        this.selectedShape.y1 += dy;
-        this.selectedShape.x2 += dx;
-        this.selectedShape.y2 += dy;
-        this.prevX = currentX;
-        this.prevY = currentY;
-      } else if (this.selectedShape.type === "pencil") {
-        const dx = currentX - this.prevX;
-        const dy = currentY - this.prevY;
-        this.selectedShape.points = this.selectedShape.points.map((p) => ({
-          x: p.x + dx,
-          y: p.y + dy,
-        }));
-        this.prevX = currentX;
-        this.prevY = currentY;
-      }
+    if (this.selectedTool === "grab" && this.isPanning) {
+      const dx = e.clientX - this.panStartX;
+      const dy = e.clientY - this.panStartY;
+      this.panStartX = e.clientX;
+      this.panStartY = e.clientY;
 
-      this.socket.send(
-        JSON.stringify({
-          type: "move_shape",
-          shape: this.selectedShape,
-          roomId: this.roomId,
-        })
-      );
-      return;
-    }
-
-    if (this.selectedTool === "pencil") {
+      this.offsetX += dx;
+      this.offsetY += dy;
+      this.clearCanvas();
+    } else if (this.selectedTool === "pencil") {
       this.currentPencilPoints.push({ x: currentX, y: currentY });
+
       this.ctx.beginPath();
       this.ctx.moveTo(
         this.currentPencilPoints[0].x,
@@ -369,7 +424,7 @@ export class Game {
       this.ctx.stroke();
     } else if (this.selectedTool === "rect") {
       this.ctx.strokeRect(
-        this.startX,
+        this.startX, // already stored in world coords
         this.startY,
         currentX - this.startX,
         currentY - this.startY
