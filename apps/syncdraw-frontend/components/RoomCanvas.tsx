@@ -27,7 +27,7 @@ export function RoomCanvas({ roomId }: { roomId: string }) {
       }
       console.log("Connected to WS, joining room:", roomId);
 
-      setSocket(ws); // add this line
+      setSocket(ws);
 
       ws.send(
         JSON.stringify({

@@ -3,7 +3,9 @@ import jwt from "jsonwebtoken";
 import { JWT_SECRET } from "@repo/backend-common/config";
 import { prismaClient } from "@repo/db/client";
 
-const wss = new WebSocketServer({ port: 8080 });
+const port = process.env.PORT ? Number(process.env.PORT) : 8080;
+const wss = new WebSocketServer({ port });
+console.log(`WS server listening on port ${port}`);
 
 interface User {
   ws: WebSocket;
@@ -113,41 +115,6 @@ wss.on("connection", (ws, request) => {
       return;
     }
 
-    // --- DRAW NEW SHAPE ---
-    if (parsedData.type === "draw") {
-      // Get room by slug
-      const room = await prismaClient.room.findFirst({
-        where: { slug: parsedData.roomId },
-      });
-      if (!room)
-        return console.error("Room not found for slug:", parsedData.roomId);
-
-      const roomId = room.id; // numeric DB id
-      const shape = parsedData.shape;
-
-      try {
-        await prismaClient.chat.create({
-          data: {
-            roomId,
-            message: JSON.stringify({ shape }),
-            userId,
-          },
-        });
-        console.log("Shape saved to DB:", shape.id);
-      } catch (e) {
-        console.error("Failed to save draw message:", e);
-      }
-
-      // Broadcast to all users in the room
-      users.forEach((u) => {
-        if (u.rooms.includes(roomId) && u.ws.readyState === WebSocket.OPEN) {
-          u.ws.send(JSON.stringify({ type: "draw", roomId, shape, userId }));
-        }
-      });
-
-      return;
-    }
-
     // --- MOVE SHAPE ---
     if (parsedData.type === "move_shape") {
       const room = await prismaClient.room.findFirst({
@@ -200,40 +167,6 @@ wss.on("connection", (ws, request) => {
               userId,
             })
           );
-        }
-      });
-
-      return;
-    }
-
-    // --- DRAW NEW SHAPE ---
-    if (parsedData.type === "draw") {
-      // Get room by slug
-      const room = await prismaClient.room.findFirst({
-        where: { slug: parsedData.roomId },
-      });
-      if (!room)
-        return console.error("Room not found for slug:", parsedData.roomId);
-
-      const roomId = room.id; // Use the DB numeric id, not slug
-      const shape = parsedData.shape;
-
-      try {
-        await prismaClient.chat.create({
-          data: {
-            roomId, // must be DB numeric id
-            message: JSON.stringify({ shape }), // shape stored as JSON string
-            userId,
-          },
-        });
-      } catch (e) {
-        console.error("Failed to save draw message:", e);
-      }
-
-      // Broadcast to all users in room
-      users.forEach((u) => {
-        if (u.rooms.includes(roomId) && u.ws.readyState === WebSocket.OPEN) {
-          u.ws.send(JSON.stringify({ type: "draw", roomId, shape, userId }));
         }
       });
 

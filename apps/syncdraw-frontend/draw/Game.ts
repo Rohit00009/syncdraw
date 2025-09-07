@@ -88,13 +88,17 @@ export class Game {
     this.socket.onmessage = (event) => {
       const message = JSON.parse(event.data);
 
-      if (message.type === "draw" && message.roomId === this.roomId) {
-        const shape: Shape = message.shape;
-        // Avoid duplicating shapes you just sent
-        if (!this.existingShapes.find((s) => s.id === shape.id)) {
-          this.existingShapes.push(shape);
-          this.clearCanvas();
-        }
+      if (message.type === "chat" && message.roomId === this.roomId) {
+        try {
+          const shapeMessage = JSON.parse(message.message);
+          if (shapeMessage.shape) {
+            const shape: Shape = shapeMessage.shape;
+            if (!this.existingShapes.find((s) => s.id === shape.id)) {
+              this.existingShapes.push(shape);
+              this.clearCanvas();
+            }
+          }
+        } catch {}
       } else if (message.type === "move_shape") {
         const updatedShape = message.shape as Shape;
         const index = this.existingShapes.findIndex(
@@ -412,6 +416,46 @@ export class Game {
       this.offsetX += dx;
       this.offsetY += dy;
       this.clearCanvas();
+    } else if (this.selectedTool === "pointer" && this.selectedShape) {
+      if (
+        this.selectedShape.type === "rect" ||
+        this.selectedShape.type === "text"
+      ) {
+        this.selectedShape.x = currentX - this.offsetX;
+        this.selectedShape.y = currentY - this.offsetY;
+      } else if (this.selectedShape.type === "circle") {
+        this.selectedShape.centerX = currentX - this.offsetX;
+        this.selectedShape.centerY = currentY - this.offsetY;
+      } else if (this.selectedShape.type === "line") {
+        const dx = currentX - this.prevX;
+        const dy = currentY - this.prevY;
+        this.selectedShape.x1 += dx;
+        this.selectedShape.y1 += dy;
+        this.selectedShape.x2 += dx;
+        this.selectedShape.y2 += dy;
+        this.prevX = currentX;
+        this.prevY = currentY;
+      } else if (this.selectedShape.type === "pencil") {
+        const dx = currentX - this.prevX;
+        const dy = currentY - this.prevY;
+        this.selectedShape.points = this.selectedShape.points.map((p) => ({
+          x: p.x + dx,
+          y: p.y + dy,
+        }));
+        this.prevX = currentX;
+        this.prevY = currentY;
+      }
+
+      this.clearCanvas();
+
+      // Optional: sync with WebSocket
+      this.socket.send(
+        JSON.stringify({
+          type: "move_shape",
+          roomId: this.roomId,
+          shape: this.selectedShape,
+        })
+      );
     } else if (this.selectedTool === "pencil") {
       this.currentPencilPoints.push({ x: currentX, y: currentY });
 
@@ -424,7 +468,7 @@ export class Game {
       this.ctx.stroke();
     } else if (this.selectedTool === "rect") {
       this.ctx.strokeRect(
-        this.startX, // already stored in world coords
+        this.startX,
         this.startY,
         currentX - this.startX,
         currentY - this.startY
